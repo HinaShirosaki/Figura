@@ -1,6 +1,6 @@
 # Figura
 
-Install this folder using **Settings → Skills & plugins**, enable it and reload.
+Install this folder using **Settings → Plugins**, enable it and reload.
 The **Figura** workspace then appears under **More**. Configure Hikari storage and sign in to Codex,
 enter a figure description, and click **Draw with Codex**. Progress appears in
 the workspace's chat rail. Each illustration has its own conversation and
