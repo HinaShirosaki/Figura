@@ -19,23 +19,26 @@ edits. Missing or truncated Markdown is disclosed to the agent. Existing figures
 are preserved. These entry points require a Hikari host with the context-action
 API; older hosts still support drawing from the plugin's own composer.
 
-The **Illustrations** left rail contains saved figures. Use **+** to create
-one and the title field to rename it. Search filters titles; selecting a row
-opens its canvas. Each illustration saves independently. Your existing figure
-is added to this library automatically. The canvas uses the full editing width
-when a figure opens. The **Layers / Assets** buttons in the right toolbar open
-either panel in the shared rail beside it. Click the active button again or
-the panel's **Close** button to return that space to the canvas. At
-narrow widths this panel overlays the canvas and scrolls independently. The UI
-follows Hikari's day/night appearance and font scale. The tools share one outer
-strip with the folded agent chat toggle. Opening a
-component panel folds chat, and opening chat folds the component panel. Older
-Hikari builds retain a compact local right toolbar. The plugin uses Hikari's
-shared left rail width. Drag the rail divider to resize. Use the chevron
-beside the figure title to hide or show **Illustrations** and give the canvas
-more room. Hikari saves the
+The left rail holds your library. Its **Illustrations | Assets** switch shows
+either your saved figures or the reusable assets shared by all of them. Under
+**Illustrations**, use **+** to create a figure and the title field to rename
+it. Search filters titles; selecting a row opens its canvas. The switch and
+search stay pinned while the list scrolls, with its scrollbar at the rail's
+outer edge. Each illustration saves independently. Your existing figure is
+added to this library automatically. The canvas uses the full editing width
+when a figure opens. The **Layers** button in the right toolbar opens the layer
+panel beside it. Click it again or the panel's **Close** button to return that
+space to the canvas. At narrow widths this panel overlays the canvas and
+scrolls independently. The UI follows Hikari's day/night appearance and font
+scale. The tools share one outer strip with the folded agent chat toggle.
+Opening Layers folds chat, and opening chat folds Layers. Older Hikari builds
+retain a compact local right toolbar. The plugin uses Hikari's shared left rail
+width. Drag the rail divider to resize. Use Hikari's left-rail button beside the
+clock in the header to hide or show the library and give the canvas more room.
+Figura registers this control through `app.setLeftRail`. Hikari saves the
 folded state per plugin through `app.setLeftRailFolded` (the `layout` permission).
-On older Hikari builds the toggle stays hidden until this API is available.
+Older Hikari builds with folding support keep the chevron beside the figure
+title; builds without folding support keep the library visible.
 An existing installation without `layout` permission needs the folder re-added
 to grant it.
 
@@ -44,17 +47,26 @@ vector, raster, and text objects. Older figures move their scratch components
 and groups to this canvas with their positions, dimensions, rotation, artwork
 and labels intact. The migration saves a new scene file before committing the
 library index, leaving the original file recoverable.
-Select objects on a canvas or in the layer list; drag to move and use the
-eight handles to resize. Vector and raster artwork stretches with the box:
-corners adjust both dimensions, edge midpoints adjust one dimension.
+Select objects on a canvas or in the layer list; drag to move and use a single
+object's eight handles to resize. Vector and raster artwork stretches with the box:
+corners adjust both dimensions, edge midpoints adjust one dimension. Hold Shift
+while dragging a handle to keep the proportions; the artwork then scales without
+stretching, and the opposite corner or edge stays in place.
 Clicks on transparent pixels in images and vector artwork pass through to
 visible components underneath. On empty canvas they begin area selection.
-Text keeps a fixed aspect ratio with every handle; its box and font scale together.
-Changing a text layer's Width or Height also scales both dimensions and its font.
-The font-size control remains independently editable.
+Selecting text shows its actual text box. Drag its handles to change the box's
+width and height while keeping the font size fixed. Shift preserves the box's
+proportions. The font-size field changes the type size independently. The three
+text alignment buttons place text at the left, center or right of its own box
+without moving or resizing the box.
+Drag SVG, PNG, JPEG, or WebP files from Finder or Explorer onto the canvas to add
+them as layers. One review dialog covers every dropped file; the first is centred
+where you drop it and the rest cascade from there. **Add layer → Import artwork…** takes
+several files at once the same way. Other file types are skipped.
 Double-click a text label on the canvas or its row in Layers to change its text
 directly on the canvas. Press Enter to save, Shift+Enter for a new line, or Escape
 to cancel. Clicking elsewhere also saves. Each change can be undone in one step.
+Text layers use their content as the label in Layers and have no separate name field.
 Text selection outlines and click targets fit the rendered label, so blank
 space in its layout box does not interfere with nearby components. Alignment,
 anchoring, and saved placement remain unchanged.
@@ -65,19 +77,42 @@ vertically to give them equal gaps while keeping the outer items fixed.
 Complete groups count as one item; individually selected group members can be
 arranged independently. Alignment uses rotated bounds and the measured text
 range, and only changes position. Each action saves one undoable edit.
+While dragging, **Smart guides** magnetically snap the selection's edges and
+centers to nearby components and the canvas, including its horizontal and
+vertical center. Pink dashed lines mark alignment; purple gap markers show
+equal spacing between neighbors or an extension of an existing row or column.
+Complete groups move together and serve as one reference. The attraction stays
+the same size on screen at every zoom level. Hold **Cmd** (Mac) or **Ctrl** (Windows) to move freely,
+or turn off **Smart guides** in **Align and distribute**. Release saves one
+undoable move; Escape cancels it. Guides are temporary and never exported.
 The opposite corner or edge midpoint stays fixed, including rotated
 objects. Arrow keys nudge, Shift nudges by ten pixels; Escape clears selection.
+Keyboard nudging bypasses magnetic snapping.
 Drag the round handle connected to the selection frame to rotate around its
-center. It works on artwork, text, groups, and multiple selected components in
-the canvas. Hold Shift to snap to 15° increments. Escape cancels rotation
+center. It works on a single selected artwork or text layer.
+Hold Shift to snap to 15° increments. Escape cancels rotation
 without changing the figure; releasing the pointer saves one undoable edit.
-Text rotates around its visible bounds while keeping its font and layout size.
+Text rotates around its text box while keeping its font and layout size.
 The handle keeps a fixed screen size and moves to an available edge when needed.
 Focus the rotation handle and use arrow keys for 1° steps, or Shift for 15° steps;
 Enter or Space rotates 15° clockwise.
 Use **Ctrl+C / Ctrl+V** (or **⌘C / ⌘V** on macOS) to copy and paste selected
 components, multiple selections, or complete groups. Paste targets the active
 canvas or another illustration, and selects the new copies.
+You can also copy a chemical structure in **ChemDraw** and paste it onto the
+Figura canvas. Hikari preserves SVG first, or converts an available single-page
+PDF drawing into SVG paths, including the original font outlines for atom labels.
+Bonds, atom symbols and charges stay together in one movable, resizable vector
+layer and remain sharp when enlarged. SVG and PowerPoint exports keep this vector
+artwork. Edit the chemistry in ChemDraw and paste the revised structure when needed.
+Paste saves one undoable edit and leaves text-field pastes alone. If only a bitmap
+is available, Figura pastes it as an image and identifies that limitation in the
+status message; copy as SVG or PDF from ChemDraw for vector quality. Existing
+bitmap pastes must be replaced by a new vector paste to gain that quality.
+Native SVG/PDF clipboard access requires the updated Hikari host
+and Figura's **clipboard:read** permission; re-add the plugin folder to grant
+that permission on an existing installation. Text SVG copied onto the clipboard
+and browser-provided image paste events can work without the native reader.
 The copied snapshot keeps the original artwork, independent text, styling,
 rotations, layer order, and full group membership even if the source is later
 edited or deleted. Copies get fresh IDs and a 15-pixel cascading offset; each
@@ -97,8 +132,7 @@ to the canvas. Saved geometry,
 exports and agent readbacks keep their original canvas coordinates. Handles
 retain their screen size at every zoom. Layer rows show component previews and a visibility button
 on hover or keyboard focus.
-Use **Add layer (+)** in the right toolbar for text labels, vector components,
-or imported artwork.
+Use **Add layer (+)** in the right toolbar for text labels or imported artwork.
 
 Use the right toolbar to choose **Select & move** (V) or **Freehand select** (L).
 Select & move combines rectangle selection,
@@ -108,11 +142,15 @@ member of a selection moves all its selected components together.
 Drag to outline components on the canvas; a freehand path
 closes automatically on release. Components whose boxes touch the region are
 selected, including rotated components. Hidden standalone layers are excluded.
-Groups select together; hold Alt to select only the touched members. A selected
-group shows only its outer frame. Ungrouped selections also show individual
-component outlines; the outer frame moves and resizes the full selection.
+Groups select together; hold Alt to select only the touched members. Multiple
+selected components each show their own outline. A floating bar above the selection
+offers **Group**, **Ungroup**, and **Align and distribute**. Drag any selected member
+to move the whole selection. Empty gaps remain available for a new area selection.
 Shift adds to the current selection. Escape cancels a gesture and keeps the
 previous selection.
+Shift-click a component to add or remove it from the selection. Hold Shift while
+dragging a selected component to constrain movement horizontally or vertically;
+the initial drag direction chooses the axis. Release Shift to move freely again.
 Freehand selection also allows dragging selected components to move them.
 Resize handles work in both tools, so there is no need to switch tools after selecting.
 The region is temporary and never appears in exports or agent readback.
@@ -121,12 +159,28 @@ The inspector shows the selected component's relevant controls first. Select a
 canvas object and open **Layers** from the toolbar, or select its layer row. Selecting or dragging
 on the canvas keeps the current panel layout steady. Double-click a label to
 edit its text inline without changing the canvas zoom. Open Layers for the compact font,
-size, color, bold/italic/underline, alignment, weight and anchor controls.
-Rotation and opacity stay visible; expand **Position & size** for exact
-coordinates, dimensions and canvas membership. Vector source and fill/stroke
-overrides are editable; clearing an override restores the original SVG style.
-Raster artwork can be replaced. Layer actions duplicate, reorder, delete, or
-copy the selection to the other canvas. No label is part of an artwork asset.
+size, color, bold/italic/underline and alignment controls.
+An SVG layer lists its colors as swatches; pick a new color for one swatch to
+recolor every part painted with it, as one undoable edit. While a swatch is
+active, the canvas outlines the parts that use its color with a moving dashed
+line and fades the rest of that layer. Only hex colors get a swatch.
+Opacity has a slider and a linked percentage field. Drag the handle for a live
+preview, or enter an exact percentage from 0 to 100. Releasing the slider saves
+one undoable adjustment; Escape cancels an unfinished preview.
+Drag a layer row to change the stacking order; the top row is in front. The
+insertion line shows where it will land, and the list scrolls at its edges.
+Groups move together; dragging a selected row moves the selected layers while
+preserving their relative order. Release to save one undoable edit, or press
+Escape to cancel. With a layer row focused, Alt+↑/↓ changes its stacking order
+from the keyboard. Layer actions duplicate or delete the selection.
+No label is part of an artwork asset.
+
+Right-click a spot on the canvas and choose **Generate here with Codex…** to
+add a component there. Describe it and choose **Automatic**, **Editable SVG**,
+or **Image generation**. Codex centers the new component at that canvas
+position, preserving the existing artwork and figure settings. Zoom and pan
+do not change the chosen position; near an edge, Codex shifts the component
+only enough to keep it on the canvas. Follow the result in the chat rail.
 
 For an empty illustration with chat closed, describe your figure in the compact
 composer beneath the canvas. Click the arrow or press **⌘Enter / Ctrl+Enter** to
@@ -184,7 +238,7 @@ also avoid converting text to paths; glyph-shaped paths cannot be reliably
 distinguished from legitimate illustration geometry.
 
 Placement honors the SVG source's aspect ratio (`xMidYMid meet` by default).
-Manual resizing with a handle or a Width/Height field deliberately sets the
+Manual resizing with a handle (without Shift) or a Width/Height field deliberately sets the
 SVG root's `preserveAspectRatio` to `none`, so the artwork stretches along with
 the box rather than leaving proportional artwork inside a changed viewport.
 This source change is saved with the geometry, visible to Codex and included
@@ -200,6 +254,11 @@ in SVG exports and MCP previews. Labels remain editable text. Other fonts
 still require the corresponding system font on the machine displaying an SVG.
 The plugin reads Inter from its own local asset server when exporting; it
 does not contact an external font service.
+
+The Font field suggests installed system font families supplied by Hikari,
+alongside Inter and common defaults. You can also type a family name or font
+stack directly. On older hosts without font discovery, these defaults and
+manual entry remain available.
 
 Data plots use Hikari's locally vendored Plotly.js. Ask the agent to plot the
 data you provide, calculate derived values when needed, or revise an existing
@@ -274,6 +333,16 @@ apply to new or requested artwork; existing layers keep their current appearance
 Complexity still sets the amount of scientific detail, and the image-generation
 percentage still controls renderer use. Choosing a style does not enable generation.
 
+**Figure palette** (the palette icon in the right toolbar) sets up to eight main
+colors for the figure. Type a hex code such as `#4169d8` (or `4169d8`, or the
+short `#48d`) and press Enter or **Add color**; with the field empty, **Add color**
+adds a starter color. Click a swatch to change it, or remove it;
+each change saves with the figure and can be undone. Codex uses the palette for
+the main fills and accents of new SVG artwork, plots and generated images, and
+leaves existing artwork alone unless you ask it to recolor. The text color and
+SVG layer color pickers offer the palette colors. Codex can also set the palette
+when you ask in chat. An empty palette leaves the colors to Codex.
+
 Generated components are text-free and use transparency where appropriate.
 These rules are included in the submitted drawing prompt and the full canvas
 contract Codex reads. Hikari enables native image generation for
@@ -291,12 +360,13 @@ per asset and 64 megapixels decoded.
 There is no per-request asset-count or combined-import-byte quota, or plugin
 quota on native image-generation calls. Saved scene/file size limits remain.
 
-Before completing a drawing run, Codex must render the canvas and review
+Before completing a run that edited the canvas, Codex must render it and review
 placement, clipping, labels, artwork and scientific relationships. The agent records its observations through
 `inspect`; a render alone is insufficient. Any subsequent edit, undo/redo,
 reload or new run requires another inspection. Hikari gives a skipped
 inspection one automatic follow-up, then reports the run as incomplete if
 the review is still missing. Saved artwork remains available for editing.
+A run that leaves the canvas unchanged, such as a generated asset, needs no inspection.
 This enforces a visual review workflow; the review can still contain mistakes
 or scientific uncertainty.
 
@@ -305,20 +375,30 @@ or scientific uncertainty.
 ### Reusable components
 
 Select one layer, a group, or several layers on one canvas. Right-click the
-selection, choose **Save as an asset…**, and give it a name. The
-**Layers / Assets** buttons in the right toolbar open either panel;
-clicking its active button again closes the rail. Only one panel is visible
-at a time. **Assets** provides searchable
-previews. Click an asset to place an editable
+selection, choose **Save as an asset…**, and give it a name; the left rail
+then switches to **Assets**. **Assets** provides searchable previews. Click an asset to place an editable
 copy on the active canvas. Large assets fit within 70% of the destination;
 smaller assets keep their saved size. Copies get fresh IDs and keep their
 rotations, relative positions, paint order, raster bytes, and text formatting.
 Multiple components form one named group with independently editable children.
 Remove an asset with its trash control; already placed copies are retained.
 
-Use **Assets → Import asset…** to save an SVG, PNG, JPEG, or WebP file directly
-to the library. Give it a name in the preview. Raster imports require the same
-text-free review as canvas artwork; SVG keeps its editable vector form.
+Use **Assets → Import asset…** to save SVG, PNG, JPEG, or WebP files directly
+to the library. A single file gets a name in the preview. Raster imports require
+the same text-free review as canvas artwork; SVG keeps its editable vector form.
+**Assets → Import folder…** imports every supported file in a folder and its
+subfolders, named after the files. Files that are not artwork are ignored; files
+that fail validation are listed in the review dialog and skipped, and identical
+artwork already in the library is reused rather than duplicated.
+
+Use **Assets → Generate asset…** to have Codex make one new reusable component
+without changing the canvas. Describe it and click **Generate with Codex**. Codex picks SVG or image
+generation from the figure's **Image generation settings**, as when drawing. The
+request goes to this figure's chat, which opens to show progress. An SVG asset
+is a set of separately editable vector layers; an image-generation asset is one
+text-free image that follows the figure's image style. Codex previews the saved
+asset, replaces it if it needs fixes, and the asset appears in Assets ready to
+insert. The button is hidden while Codex is unavailable.
 
 Place a raster asset on the canvas, select the image and click **Crop selected image** in the
 toolbar. Drag the crop handles directly in the canvas or enter pixel bounds,
@@ -366,7 +446,7 @@ saves survive reloads, and retries do not duplicate a committed snapshot.
 | `asset_list` | Takes only `action`; returns asset names, IDs, dimensions, layer counts and `assets_revision`. |
 | `asset_read` | `asset_id`, optional `include_assets:true`; returns `component` with relative object coordinates, SVG and text properties. Raster bytes are omitted by default. |
 | `asset_render` | `asset_id`; returns a native PNG preview up to 400 pixels. Does not satisfy or invalidate canvas inspection. |
-| `asset_save` | `illustration_id`, `expected_revision`, `expected_assets_revision`, unique `request_id`, `name`, and exactly one of component/group `id`, component `ids`, or `raster_asset` plus `textFree:true`. A raster file can be saved without placing it. Saves without altering canvas geometry or revision. |
+| `asset_save` | `illustration_id`, `expected_revision`, `expected_assets_revision`, unique `request_id`, `name`, and exactly one of component/group `id`, component `ids`, `raster_asset` plus `textFree:true`, or `objects`. A raster file can be saved without placing it. `objects` builds an asset from 1–200 `type:"vector"` SVG objects in one coordinate space, without placing them or needing `illustration_id`/`expected_revision`. Saves without altering canvas geometry or revision. |
 | `asset_delete` | `asset_id`, `expected_assets_revision`, unique `request_id`. Removes only the saved snapshot. |
 
 Insert through normal revision-guarded `apply`, for example:
@@ -381,7 +461,7 @@ size, and omit x/y to center the copy. `apply.inserted_assets` returns component
 IDs, group ID (null for a single component), and final bounds. Insertions are
 atomic with other operations, undoable, and require a new canvas inspection.
 Asset save/delete use a separate library revision and retain the last 64 request
-receipts for retry safety. Each asset holds up to 200 layers and 12 million
+receipts for retry safety. Each asset holds up to 500 layers and 12 million
 serialized characters. The shared index is limited by its serialized size,
 with no fixed asset-count quota. The canonical `reusable-assets.json`
 index commits immutable `assets/<id>/component.json` snapshots only after they
@@ -402,7 +482,7 @@ and drawing instructions. It operates on the same objects as the user interface.
 | `render` | A native MCP PNG image of `main` (default), bounded to 1600 pixels per dimension. This works while the plugin's view is inactive. |
 | `inspect` | Record observations after reviewing the rendered canvas. Requires `expected_revision`, the render's `inspection.inspection_id`, and `review` with nonempty `layout`, `labels`, `artwork`, and `science` strings. |
 | `inspection_status` | Whether the current revision has a completed review in this agent run. Does not return an inspection receipt. |
-| `apply` | An atomic batch of 1–200 operations, acknowledged after durable file persistence. Requires `expected_revision` and unique `request_id`. |
+| `apply` | An atomic batch of 1–500 operations, acknowledged after durable file persistence. Requires `expected_revision` and unique `request_id`. |
 
 Read/render/apply/inspect/inspection_status act on the open illustration. Include its `illustration_id`
 to pin the target; selection changes return `illustration_changed` without
@@ -504,7 +584,7 @@ Saves alternate between these files, then atomically replace the index using
 the existing plugin-confined `files` API. If the index write fails, the prior
 scene remains committed and usable after reload. Legacy `workspace.json` is
 preserved during migration. Plugin settings contain only the library pointer.
-The library holds up to 100 illustrations, each with up to 200 objects and
+The library holds up to 100 illustrations, each with up to 500 objects and
 12 million serialized characters; the host file-size ceiling is also enforced.
 Undo/redo keeps the last 25 edits of the active figure and resets on selection.
 Storage changes reload the library from the newly selected root. Hikari migrates

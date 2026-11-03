@@ -50,20 +50,33 @@ conversation and its unsent draft.
 ## Editing
 
 - **Layers:** vector, raster, plot and text layers with previews, visibility and
-  property controls. Double-click a label to edit its text on the canvas.
+  property controls. Double-click a label to edit its text on the canvas. Drag
+  rows, or press Alt+↑/↓, to reorder layers; groups move as one.
 - **Select & move (V)** and **Freehand select (L):** drag empty space to select,
-  drag a selection to move it, use the eight handles to resize. Shift adds to the
-  selection; Alt picks one member of a group. Clicks pass through transparent
-  pixels to the layer underneath.
+  drag a selection to move it, use the eight handles to resize (hold Shift to keep
+  the proportions; text keeps its font size). Shift-click adds to the selection;
+  Alt picks one member of a group. Clicks pass through transparent pixels to the
+  layer underneath.
 - **Rotate** with the round handle; hold Shift to snap to 15°.
 - **Group / Ungroup** (⌘G / ⌘⇧G) and **Align and distribute** from the right
   toolbar.
 - **Copy and paste** (⌘C / ⌘V) between figures; copies keep formatting, rotation
   and grouping.
-- **Right-click** (or Shift+F10) for Copy, Paste, Group, Ungroup and
-  **Save as an asset…**.
-- **Assets** keeps reusable components shared by all figures. Save a selection,
-  or use **Import asset…** for SVG, PNG, JPEG or WebP files.
+- **Right-click** (or Shift+F10) for Copy, Paste, Group, Ungroup,
+  **Save as an asset…** and, on the canvas, **Generate here with Codex…**, which
+  adds one new component centered where you clicked.
+- **Assets**, beside **Illustrations** in the left rail's switch, keeps reusable
+  components shared by all figures. Save a selection,
+  use **Import asset…** or **Import folder…** for SVG, PNG, JPEG or WebP files, or use
+  **Generate asset…** to have Codex make one (SVG or image generation, per the
+  figure's Image generation settings) without touching the canvas.
+- **Drag images in:** drop SVG, PNG, JPEG or WebP files on the canvas to add them
+  as layers.
+- **Colors** in Layers recolor an SVG layer one color at a time; the active swatch
+  highlights where its color is used.
+- **Figure palette** (palette icon in the toolbar) holds up to 8 main colors;
+  add one by its hex code or pick it.
+  Codex draws new artwork with them, and color pickers offer them.
 - **Crop selected image** crops a raster layer in place; the saved asset is left
   untouched.
 - **Canvas size** presets or **Custom…** dimensions; zoom and **Fit** change only
@@ -96,9 +109,9 @@ On Windows use Ctrl in place of ⌘.
 - **Assets first:** before each drawing or edit, Codex checks the asset library
   and reuses suitable components. Generated images and finished multi-layer groups
   are saved there automatically.
-- **Visual review:** a run completes only after Codex renders the latest canvas
-  and records what it checked with `inspect`. Hikari prompts once if the step is
-  skipped; artwork already saved is kept either way.
+- **Visual review:** a run that edited the canvas completes only after Codex
+  renders the latest canvas and records what it checked with `inspect`. Hikari
+  prompts once if the step is skipped; artwork already saved is kept either way.
 
 Codex reaches the canvas through Hikari's `plugin_canvas` MCP tool. The drawing
 instructions live in [agent/workflow.mjs](agent/workflow.mjs) and the request
@@ -116,7 +129,7 @@ scratch canvases migrate automatically.
 | Limit | Value |
 | --- | --- |
 | Figures in the library | 100 |
-| Layers per figure | 200 |
+| Layers per figure | 500 |
 | Saved figure size | 12 million characters |
 | Raster image | PNG, JPEG or WebP, 5 MiB, 64 megapixels |
 
@@ -128,6 +141,7 @@ scratch canvases migrate automatically.
 | `downloads` | Export through a save dialog |
 | `agent:chat` | Sending your prompt to the figure's chat |
 | `agent:canvas` | Letting Codex read, edit and render the canvas |
+| `clipboard:read` | Pasting chemical structure previews from ChemDraw using Sample's native clipboard reader |
 | `layout` | Remembering the left rail's width and folded state |
 
 ## Development
@@ -136,7 +150,7 @@ scratch canvases migrate automatically.
 [model.mjs](model.mjs), saving in [workspace.mjs](workspace.mjs) and
 [library.mjs](library.mjs), and PowerPoint export in
 [powerpoint.mjs](powerpoint.mjs). `vendor/` bundles Cropper.js 1.6.2,
-PptxGenJS 4.0.1 and the Inter font, so everything works offline.
+PptxGenJS 4.0.1 (both MIT) and the Inter font, so everything works offline.
 [icon.svg](icon.svg) is the dock icon; Hikari tints it to the current theme.
 
 The unit tests need Node.js 22 or newer and no dependencies. GitHub Actions runs

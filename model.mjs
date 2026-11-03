@@ -1,5 +1,6 @@
-// Scene data is shared by manual controls and the agent. Artwork and labels
-// never share a layer. DOM validation of SVG happens in artwork.mjs.
+// Scene data is shared by manual controls and the agent. Figure labels stay
+// separate; atom labels belong to pasted chemical structures. SVG is validated
+// in artwork.mjs.
 import { COMPLEXITY_LEVELS, DEFAULT_COMPLEXITY } from './complexity.mjs';
 import { imageGenerationPercent } from './image-generation.mjs';
 import { imageGenerationStyle, MAX_IMAGE_STYLE_LINE } from './image-style.mjs';
@@ -9,7 +10,9 @@ import { selectionBounds, transformSelection } from './grouping.mjs';
 import { rotateComponents } from './rotation.mjs';
 export const CANVASES = ['main'];
 export const MAX_DOCUMENT_CHARS = 12000000;
-export const OBJECT_FIELDS = ['id', 'name', 'type', 'canvas', 'x', 'y', 'width', 'height', 'rotation', 'opacity', 'visible', 'svg', 'plotly', 'dataUrl', 'textFree', 'text', 'fontFamily', 'fontSize', 'fontWeight', 'color', 'align', 'anchor', 'italic', 'underline', 'fill', 'stroke', 'strokeWidth'];
+// Every group owns at least two objects, so the group cap follows the object cap.
+export const MAX_OBJECTS = 500, MAX_GROUPS = MAX_OBJECTS / 2;
+export const OBJECT_FIELDS = ['id', 'name', 'type', 'canvas', 'x', 'y', 'width', 'height', 'rotation', 'opacity', 'visible', 'svg', 'plotly', 'dataUrl', 'textFree', 'chemicalStructure', 'text', 'fontFamily', 'fontSize', 'fontWeight', 'color', 'align', 'anchor', 'italic', 'underline', 'fill', 'stroke', 'strokeWidth'];
 export const TEXT_FIELDS = ['text', 'fontFamily', 'fontSize', 'fontWeight', 'color', 'align', 'anchor', 'italic', 'underline'];
 const clone = value => JSON.parse(JSON.stringify(value));
 export const validId = value => typeof value === 'string' && /^[a-zA-Z0-9_-]{1,100}$/.test(value);
@@ -38,8 +41,14 @@ export function color(value, allowNone = false) {
   if ((allowNone && value === 'none') || /^#[\da-f]{6}(?:[\da-f]{2})?$/i.test(value)) return value;
   throw new Error('Use a hex color (#rrggbb or #rrggbbaa).');
 }
+// The figure's main colors, chosen by the user; empty lets Codex choose.
+export const MAX_PALETTE = 8;
+export function palette(value) {
+  if (!Array.isArray(value) || value.length > MAX_PALETTE || value.some(item => !/^#[\da-f]{6}$/i.test(item))) throw new Error(`palette must list at most ${MAX_PALETTE} #rrggbb colors.`);
+  return value.map(item => item.toLowerCase());
+}
 export function createDocument() {
-  return { version: 1, revision: crypto.randomUUID(), title: 'Untitled figure', complexity: DEFAULT_COMPLEXITY, imageGenerationPercent: null, imageGenerationStyle: imageGenerationStyle(), imageStyleLine: '',
+  return { version: 1, revision: crypto.randomUUID(), title: 'Untitled figure', complexity: DEFAULT_COMPLEXITY, imageGenerationPercent: null, imageGenerationStyle: imageGenerationStyle(), imageStyleLine: '', palette: [],
     canvases: { main: { width: 1200, height: 800, background: '#ffffff' } },
     objects: [], groups: [], receipts: [] };
 }
@@ -54,9 +63,11 @@ export function normalizeObject(raw, validateSvg = value => value) {
     rotation: number(raw.rotation ?? 0, 'rotation', -360, 360), opacity: number(raw.opacity ?? 1, 'opacity', 0, 1), visible: raw.visible ?? true };
   if (typeof result.visible !== 'boolean') throw new Error('visible must be boolean.');
   if (type !== 'plot' && 'plotly' in raw) throw new Error('plotly is only supported on plot layers.');
+  if ('chemicalStructure' in raw && (!['vector', 'raster'].includes(type) || raw.chemicalStructure !== true)) throw new Error('chemicalStructure must be true on a vector or raster structure layer.');
   if (type === 'vector') {
     for (const key of ['dataUrl', 'textFree', ...TEXT_FIELDS]) if (key in raw) throw new Error(`${key} is not a vector property.`);
-    result.svg = validateSvg(string(raw.svg, 'svg', 300000));
+    result.svg = validateSvg(string(raw.svg, 'svg', raw.chemicalStructure ? 3000000 : 300000), { chemical: raw.chemicalStructure === true });
+    if (raw.chemicalStructure === true) result.chemicalStructure = true;
     if (!result.svg.trim()) throw new Error('Vector objects need a text-free SVG.');
     if (raw.fill !== undefined) result.fill = color(raw.fill, true);
     if (raw.stroke !== undefined) result.stroke = color(raw.stroke, true);
@@ -70,8 +81,11 @@ export function normalizeObject(raw, validateSvg = value => value) {
     for (const key of ['svg', 'fill', 'stroke', 'strokeWidth', ...TEXT_FIELDS]) if (key in raw) throw new Error(`${key} is not a raster property.`);
     const dataUrl = string(raw.dataUrl, 'dataUrl', 7000000);
     if (!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(dataUrl)) throw new Error('Raster objects need embedded PNG, JPEG or WebP bytes.');
-    if (raw.textFree !== true) throw new Error('Confirm raster artwork is text-free with textFree: true. Put labels in text objects.');
-    result.dataUrl = dataUrl; result.textFree = true;
+    if (raw.textFree !== true && !(raw.chemicalStructure === true && raw.textFree === false)) throw new Error('Confirm raster artwork is text-free with textFree: true. Put labels in text objects.');
+    result.dataUrl = dataUrl; result.textFree = raw.textFree;
+    // Atom symbols, charges and bond labels belong to the pasted structure.
+    // Keep that exception explicit instead of claiming these images lack text.
+    if (raw.chemicalStructure === true) result.chemicalStructure = true;
   } else {
     for (const key of ['svg', 'dataUrl', 'textFree', 'fill', 'stroke', 'strokeWidth']) if (key in raw) throw new Error(`${key} is not a text property.`);
     Object.assign(result, { text: string(raw.text ?? 'Label', 'text', 3000), fontFamily: string(raw.fontFamily ?? 'Arial', 'fontFamily', 100),
@@ -88,10 +102,10 @@ export function normalizeCanvas(raw) {
 }
 export function normalizeDocument(raw, validateSvg) {
   record(raw, 'Document');
-  if (raw.version !== 1 || !Array.isArray(raw.objects) || raw.objects.length > 200) throw new Error('Unsupported document or too many objects (maximum 200).');
+  if (raw.version !== 1 || !Array.isArray(raw.objects) || raw.objects.length > MAX_OBJECTS) throw new Error(`Unsupported document or too many objects (maximum ${MAX_OBJECTS}).`);
   const objects = raw.objects.map(obj => normalizeObject(obj, validateSvg));
   if (new Set(objects.map(obj => obj.id)).size !== objects.length) throw new Error('Object IDs must be unique.');
-  if (raw.groups !== undefined && (!Array.isArray(raw.groups) || raw.groups.length > 100)) throw new Error('Use at most 100 groups.');
+  if (raw.groups !== undefined && (!Array.isArray(raw.groups) || raw.groups.length > MAX_GROUPS)) throw new Error(`Use at most ${MAX_GROUPS} groups.`);
   const used = new Set(objects.map(object => object.id)), members = new Set();
   const groups = (raw.groups || []).map(group => {
     record(group, 'Group'); fields(group, ['id', 'name', 'canvas', 'ids']);
@@ -109,11 +123,11 @@ export function normalizeDocument(raw, validateSvg) {
     complexity: choice(raw.complexity ?? DEFAULT_COMPLEXITY, COMPLEXITY_LEVELS, 'complexity'),
     imageGenerationPercent: imageGenerationPercent(raw.imageGenerationPercent),
     imageGenerationStyle: imageGenerationStyle(raw.imageGenerationStyle),
-    imageStyleLine: string(raw.imageStyleLine ?? '', 'Image style line', MAX_IMAGE_STYLE_LINE),
+    imageStyleLine: string(raw.imageStyleLine ?? '', 'Image style line', MAX_IMAGE_STYLE_LINE), palette: palette(raw.palette ?? []),
     canvases: Object.fromEntries(CANVASES.map(key => [key, normalizeCanvas(raw.canvases?.[key])])), objects, groups, receipts: (raw.receipts || []).slice(-64) };
   if (raw.source !== undefined) result.source = normalizeSourceContext(raw.source);
   if (raw.pendingAssetGroups !== undefined) {
-    if (!Array.isArray(raw.pendingAssetGroups) || raw.pendingAssetGroups.length > 100 || raw.pendingAssetGroups.some(id => !validId(id))
+    if (!Array.isArray(raw.pendingAssetGroups) || raw.pendingAssetGroups.length > MAX_GROUPS || raw.pendingAssetGroups.some(id => !validId(id))
       || new Set(raw.pendingAssetGroups).size !== raw.pendingAssetGroups.length) throw new Error('Invalid pending asset groups.');
     result.pendingAssetGroups = raw.pendingAssetGroups.filter(id => groups.some(group => group.id === id));
   }
@@ -148,13 +162,14 @@ export function validateRequest(args) {
   if (args.action === 'apply') {
     if (!args.expected_revision || !args.request_id) throw new Error('Apply requires expected_revision and request_id. Read the canvas first.');
     string(args.expected_revision, 'expected_revision', 100); string(args.request_id, 'request_id', 100);
-    if (!Array.isArray(args.operations) || !args.operations.length || args.operations.length > 200) throw new Error('Apply needs 1–200 operations.');
+    // One batch can align or restyle every object in a full figure.
+    if (!Array.isArray(args.operations) || !args.operations.length || args.operations.length > MAX_OBJECTS) throw new Error(`Apply needs 1–${MAX_OBJECTS} operations.`);
   } else if (args.operations !== undefined || args.request_id !== undefined || args.expected_revision !== undefined) throw new Error('Read/render do not accept mutation fields.');
   return args;
 }
 export function applyOperations(document, operations, validateSvg) {
   const next = clone(document);
-  next.groups ??= [];
+  next.groups ??= []; next.palette ??= [];
   const pruneGroups = () => {
     next.groups = next.groups.map(group => ({ ...group, ids: group.ids.filter(id => next.objects.some(object => object.id === id && object.canvas === group.canvas)) })).filter(group => group.ids.length >= 2);
   };
@@ -170,7 +185,7 @@ export function applyOperations(document, operations, validateSvg) {
   };
   for (const operation of operations) {
     record(operation, 'Operation');
-    fields(operation, ['op', 'object', 'id', 'patch', 'canvas', 'ids', 'copy', 'new_id', 'title', 'complexity', 'imageGenerationPercent', 'imageGenerationStyle', 'imageStyleLine', 'name', 'degrees', 'pivot']);
+    fields(operation, ['op', 'object', 'id', 'patch', 'canvas', 'ids', 'copy', 'new_id', 'title', 'complexity', 'imageGenerationPercent', 'imageGenerationStyle', 'imageStyleLine', 'palette', 'name', 'degrees', 'pivot']);
     if (operation.op !== 'rotate' && (operation.degrees !== undefined || operation.pivot !== undefined)) throw new Error('Rotation fields require the rotate operation.');
     const group = next.groups.find(item => item.id === operation.id);
     if (operation.op === 'group') {
@@ -267,6 +282,12 @@ export function applyOperations(document, operations, validateSvg) {
       next.imageGenerationStyle = style;
     }
     else if (operation.op === 'image_style_line') next.imageStyleLine = string(operation.imageStyleLine, 'Image style line', MAX_IMAGE_STYLE_LINE).trim();
+    else if (operation.op === 'palette') {
+      const colors = palette(operation.palette);
+      // The saved style line names a hex palette; let the agent rewrite it.
+      if (colors.join() !== next.palette.join()) next.imageStyleLine = '';
+      next.palette = colors;
+    }
     else throw new Error(`Unknown operation: ${operation.op}.`);
     pruneGroups();
   }

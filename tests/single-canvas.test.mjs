@@ -33,3 +33,4 @@ test('new requests and every canvas mutation reject scratch atomically', () => {
   assert.equal('visible' in schema, false);
   assert.deepEqual(CANVASES, ['main']);
 });
+

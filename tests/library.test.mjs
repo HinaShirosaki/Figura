@@ -356,3 +356,4 @@ test('read advertises one canvas and rejects obsolete scratch actions without ed
   assert.equal(host.writes.length, writes);
   assert.equal((await workspace.request({ action: 'read' })).revision, current.revision);
 });
+

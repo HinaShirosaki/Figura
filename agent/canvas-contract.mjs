@@ -1,6 +1,7 @@
 // This request contract belongs to the portable plugin, not the host.
 import { COMPLEXITY_LEVELS } from '../complexity.mjs';
 import { IMAGE_STYLE_IDS, MAX_IMAGE_STYLE_PROMPT, MAX_IMAGE_STYLE_LINE } from '../image-style.mjs';
+import { MAX_OBJECTS, MAX_PALETTE } from '../model.mjs';
 const objectProperties = {
   id: { type: 'string', maxLength: 100, description: 'Logical object ID, unchanged by rendering. DOM and SVG fragment IDs are namespaced separately.' }, name: { type: 'string', maxLength: 200, description: 'Layer name shown to the user; defaults to id.' },
   type: { type: 'string', enum: ['vector', 'raster', 'text', 'plot'] }, canvas: { type: 'string', enum: ['main'] },
@@ -15,9 +16,10 @@ const objectProperties = {
   } },
   fill: { type: 'string', description: 'Optional vector-wide fill override: hex or none.' }, stroke: { type: 'string' }, strokeWidth: { type: 'number' },
   dataUrl: { type: 'string', maxLength: 7000000, description: 'Embedded PNG/JPEG/WebP. Prefer operation.raster_asset with plugin_canvas assets to import a file without transmitting base64.' },
-  textFree: { type: 'boolean', description: 'Required true for raster, after checking the image has no baked-in text.' },
+  textFree: { type: 'boolean', description: 'Required true for normal raster artwork. Pasted chemical structures retain false because atom labels are integral to the structure.' },
+  chemicalStructure: { type: 'boolean', const: true, description: 'User-pasted vector or raster chemical structure. Vector SVG may include integral atom text. Preserve atom symbols, charges and bonds together; captions still belong in separate text layers.' },
   text: { type: 'string', maxLength: 3000 }, fontFamily: { type: 'string', maxLength: 100, description: 'Inter is bundled and embedded in SVG exports and previews. Other fonts use installed system fonts.' }, fontSize: { type: 'number', minimum: 4, maximum: 300 },
-  fontWeight: { type: 'number', minimum: 100, maximum: 900 }, color: { type: 'string' }, align: { type: 'string', enum: ['start', 'middle', 'end'] },
+  fontWeight: { type: 'number', minimum: 100, maximum: 900 }, color: { type: 'string' }, align: { type: 'string', enum: ['start', 'middle', 'end'], description: 'Horizontal text alignment within this object’s width: left, center or right. Changing alignment preserves the text box position, dimensions and font size. Resizing a text box preserves fontSize; set fontSize explicitly to change typography.' },
   anchor: { type: 'string', enum: ['top', 'middle', 'bottom'] }, italic: { type: 'boolean' }, underline: { type: 'boolean' }
 };
 export const CANVAS_TOOL_CONTRACT = Object.freeze({
@@ -31,7 +33,8 @@ export const CANVAS_TOOL_CONTRACT = Object.freeze({
       id: { type: 'string', maxLength: 100, description: 'asset_save: component or group ID, instead of ids or raster_asset.' },
       raster_asset: { type: 'string', maxLength: 100, description: 'asset_save: save an image supplied in plugin_canvas assets directly to the reusable library without placing it. Requires name and textFree:true; PNG transparent borders are trimmed. Save every Codex image_gen output, including unused candidates. Then place with apply insert_asset.' },
       textFree: { type: 'boolean', description: 'asset_save with raster_asset: confirm the image has no baked-in text.' },
-      ids: { type: 'array', minItems: 1, maxItems: 200, items: { type: 'string', maxLength: 100 }, description: 'asset_save: distinct component IDs on one canvas, instead of id. Preserves paint order, relative geometry and separate text layers. Saving does not edit the figure.' },
+      ids: { type: 'array', minItems: 1, maxItems: MAX_OBJECTS, items: { type: 'string', maxLength: 100 }, description: 'asset_save: distinct component IDs on one canvas, instead of id. Preserves paint order, relative geometry and separate text layers. Saving does not edit the figure.' },
+      objects: { type: 'array', minItems: 1, maxItems: MAX_OBJECTS, items: { type: 'object', additionalProperties: false, required: ['id', 'type', 'svg'], properties: objectProperties }, description: 'asset_save: build a new asset from type:"vector" SVG objects without placing them, instead of id, ids or raster_asset. Give x/y/width/height in one shared coordinate space, back to front; the asset keeps their relative placement and moves its origin to their top-left. Needs no illustration_id or expected_revision.' },
       inspection_id: { type: 'string', maxLength: 100, description: 'For inspect: returned by rendering the canvas at the current revision in this run. Any edit, undo/redo, reload or new run requires a fresh render. Inspection also saves newly built/changed groups with at least two artwork layers to reusable assets; a failed asset save blocks completion.' },
       review: { type: 'object', additionalProperties: false, required: ['layout', 'labels', 'artwork', 'science'], description: 'For inspect: what you observed in the rendered images.', properties: {
         layout: { type: 'string', minLength: 1, maxLength: 1000, description: 'Placement, scale, clipping and overlaps on the canvas.' },
@@ -45,9 +48,9 @@ export const CANVAS_TOOL_CONTRACT = Object.freeze({
       expected_library_revision: { type: 'string', maxLength: 100, description: 'Required for create/open/duplicate; obtain from list or read. List takes only action.' },
       include_assets: { type: 'boolean', description: 'read/asset_read only: include raster data URLs. SVG sources are always returned.' },
       expected_revision: { type: 'string', maxLength: 100 }, request_id: { type: 'string', maxLength: 100 },
-      operations: { type: 'array', minItems: 1, maxItems: 200, items: {
+      operations: { type: 'array', minItems: 1, maxItems: MAX_OBJECTS, items: {
         type: 'object', additionalProperties: false, required: ['op'], properties: {
-          op: { type: 'string', enum: ['upsert', 'update', 'delete', 'transfer', 'canvas', 'order', 'title', 'complexity', 'image_generation', 'image_generation_style', 'image_style_line', 'group', 'ungroup', 'transform', 'rotate', 'insert_asset'] },
+          op: { type: 'string', enum: ['upsert', 'update', 'delete', 'transfer', 'canvas', 'order', 'title', 'complexity', 'image_generation', 'image_generation_style', 'image_style_line', 'palette', 'group', 'ungroup', 'transform', 'rotate', 'insert_asset'] },
           asset_id: { type: 'string', maxLength: 100, description: 'insert_asset: saved reusable asset ID. Creates independent editable components with fresh IDs; multiple components become one named group. apply returns inserted_assets with ids, group_id and bounds. Deleting the saved asset never changes placed copies.' },
           x: { type: 'number', description: 'insert_asset: left of the rotated selection bounds, in destination canvas units. Defaults to centering.' },
           y: { type: 'number', description: 'insert_asset: top of the rotated selection bounds, in destination canvas units. Defaults to centering.' },
@@ -56,11 +59,11 @@ export const CANVAS_TOOL_CONTRACT = Object.freeze({
           object: { type: 'object', additionalProperties: false, required: ['id', 'type'], properties: objectProperties },
           id: { type: 'string', maxLength: 100, description: 'Component ID, or group ID for update/delete/transfer/ungroup/transform/rotate. group requires an unused ID.' },
           degrees: { type: 'number', minimum: -360, maximum: 360, description: 'rotate: clockwise angle to add to the selected components. Keeps their sizes, typography and relative positions rigidly related.' },
-          pivot: { type: 'object', additionalProperties: false, required: ['x', 'y'], properties: { x: { type: 'number' }, y: { type: 'number' } }, description: 'rotate: optional center in canvas units. Defaults to the selected components\' bounds center; the UI uses the visible selection center for text.' },
+          pivot: { type: 'object', additionalProperties: false, required: ['x', 'y'], properties: { x: { type: 'number' }, y: { type: 'number' } }, description: 'rotate: optional center in canvas units. Defaults to the selected components\' bounds center; the UI rotates a single text box around its box center.' },
           name: { type: 'string', maxLength: 200, description: 'Optional group name for group.' },
           patch: { type: 'object', description: 'update: object properties (set vector fill, stroke, or strokeWidth to null to restore original artwork); group update: name and/or x/y/width/height; canvas: width, height, background. transform: x/y and proportional width/height in canvas units. Set either dimension, or both at the same scale. Group resizing scales text fonts proportionally and preserves member rotations. Unsupported size/font limits reject the batch.' },
           canvas: { type: 'string', enum: ['main'] }, copy: { type: 'boolean' }, new_id: { type: 'string', maxLength: 100 },
-          ids: { type: 'array', items: { type: 'string' }, maxItems: 200, description: 'order: every object on that canvas, back to front. group: at least two distinct component IDs on one canvas; include all members when merging existing groups. transform/rotate: component IDs on one canvas, instead of an id. Grouping/ungrouping preserves geometry and paint order; read returns groups with current bounds. Components remain individually editable. delete/transfer with a group ID affects all members; copies return fresh member IDs in groups.' },
+          ids: { type: 'array', items: { type: 'string' }, maxItems: MAX_OBJECTS, description: 'order: every object on that canvas, back to front. group: at least two distinct component IDs on one canvas; include all members when merging existing groups. transform/rotate: component IDs on one canvas, instead of an id. Grouping/ungrouping preserves geometry and paint order; read returns groups with current bounds. Components remain individually editable. delete/transfer with a group ID affects all members; copies return fresh member IDs in groups.' },
           title: { type: 'string', maxLength: 200 },
           complexity: { type: 'string', enum: COMPLEXITY_LEVELS, description: 'For the complexity operation: saved figure detail level. Change only when the user requests it. Read returns matching drawing instructions.' },
           imageGenerationPercent: { type: ['integer', 'null'], minimum: 0, maximum: 100, description: 'image_generation operation: saved target share of eligible illustrative artwork area. UI presets: 0, 25, 50, 75, 100; choose a preset unless the user specifies a custom whole percentage. null restores Automatic SVG-first choice. Excludes boxes, arrows, connectors, charts, exact geometry and separate text labels. A preference, not an asset/call quota. Change only when the user requests it; read returns matching preset instructions. Existing custom targets remain supported.' },
@@ -68,6 +71,7 @@ export const CANVAS_TOOL_CONTRACT = Object.freeze({
             preset: { type: 'string', enum: IMAGE_STYLE_IDS }, prompt: { type: 'string', maxLength: MAX_IMAGE_STYLE_PROMPT, description: 'Optional user style notes: palette, lighting, materials or other visual direction.' }
           } },
           imageStyleLine: { type: 'string', maxLength: MAX_IMAGE_STYLE_LINE, description: 'image_style_line operation: the figure\'s concrete style line (medium, hex palette, light direction, outline weight, shading, viewpoint), pasted verbatim into every image_gen prompt. Changing the image style clears it.' },
+          palette: { type: 'array', maxItems: MAX_PALETTE, items: { type: 'string', pattern: '^#[0-9a-fA-F]{6}$' }, description: 'palette operation: the figure\'s main colors as #rrggbb, replacing the saved list; [] clears it. Change only when the user asks.' },
           raster_asset: { type: 'string', maxLength: 2400, description: 'ID of an image supplied in plugin_canvas assets. upsert/update only.' }
         }
       } }
