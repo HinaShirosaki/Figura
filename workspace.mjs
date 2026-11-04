@@ -10,7 +10,7 @@ import { instantiateClipboard } from './clipboard.mjs';
 import { LIBRARY_PATH, LIBRARY_ACTIONS, normalizeLibrary, readLibrary, nextScenePath, validateLibraryRequest } from './library.mjs';
 import { migrateStoredDocument } from './stored-document.mjs';
 import { ASSETS_PATH, ASSET_ACTIONS, assetPath, createAssetLibrary, normalizeAssetLibrary, readAssetLibrary, validateAssetRequest,
-  snapshotAsset, normalizeAsset, readAsset, instantiateAsset, assetPreviewDocument, assetContent, compoundGroups } from './reusable-assets.mjs';
+  snapshotAsset, componentAsset, normalizeAsset, readAsset, instantiateAsset, assetPreviewDocument, assetContent, compoundGroups } from './reusable-assets.mjs';
 
 export function encodeText(text) {
   const bytes = new TextEncoder().encode(text);
@@ -83,9 +83,10 @@ export function createWorkspace({ hikari, onChange = () => {}, onLibraryChange =
     if (!assetLibrary.assets.some(asset => asset.id === id)) throw new Error('This reusable asset does not exist. Refresh Assets.');
     return normalizeAsset(await readJson(assetPath(id)), validateSvg);
   }
-  function rasterComponent(raster, name) {
+  function rasterComponent(raster, name, source = null) {
     return normalizeAsset({ version: 1, name, objects: [{ id: `raster-${crypto.randomUUID()}`, name, type: 'raster', canvas: 'main',
-      x: 0, y: 0, ...fitRasterBox(raster.width, raster.height), textFree: true, dataUrl: raster.dataUrl }] });
+      x: 0, y: 0, ...fitRasterBox(raster.width, raster.height),
+      ...(source?.chemicalStructure ? { chemicalStructure: true, textFree: source.textFree } : { textFree: true }), dataUrl: raster.dataUrl }] });
   }
   const assetEntry = (asset, fingerprint, origin) => ({ id: crypto.randomUUID(), name: asset.name, width: asset.width, height: asset.height,
     objectCount: asset.objects.length, updatedAt: new Date().toISOString(), fingerprint, origin });
@@ -128,14 +129,14 @@ export function createWorkspace({ hikari, onChange = () => {}, onLibraryChange =
     if (args.expected_assets_revision !== assetLibrary.revision) return { ...failure('revision_conflict', 'The reusable assets changed. List them again.'), ...readAssetLibrary(assetLibrary) };
     let asset, entry, raster;
     if (args.action === 'asset_save') {
-      if (args.illustration_id !== library.activeId) return { ...failure('illustration_changed', 'Another illustration is open. Reopen the intended illustration before saving components.'), ...readLibrary(library) };
-      if (args.expected_revision !== documentState.revision) return { ...failure('revision_conflict', 'The figure changed. Read it again before saving components.'), revision: documentState.revision };
+      if (!args.objects && args.illustration_id !== library.activeId) return { ...failure('illustration_changed', 'Another illustration is open. Reopen the intended illustration before saving components.'), ...readLibrary(library) };
+      if (!args.objects && args.expected_revision !== documentState.revision) return { ...failure('revision_conflict', 'The figure changed. Read it again before saving components.'), revision: documentState.revision };
       raster = imported ? await prepareRaster(imported.data_url, { trim: true }) : null;
-      asset = raster ? rasterComponent(raster, args.name.trim()) : snapshotAsset(documentState, args, validateSvg);
+      asset = raster ? rasterComponent(raster, args.name.trim()) : args.objects ? componentAsset(args.name.trim(), args.objects, validateSvg) : snapshotAsset(documentState, args, validateSvg);
       const fingerprint = await signature(assetContent(asset));
       entry = raster && assetLibrary.assets.find(item => item.fingerprint === fingerprint);
       if (entry) asset = null;
-      else entry = assetEntry(asset, fingerprint, imported?.source === 'codex' ? 'codex' : imported ? 'storage' : 'manual');
+      else entry = assetEntry(asset, fingerprint, imported?.source === 'codex' ? 'codex' : imported ? 'storage' : args.objects ? 'agent' : 'manual');
     } else {
       entry = assetLibrary.assets.find(item => item.id === args.asset_id);
       if (!entry) return failure('not_found', 'This reusable asset does not exist.');
@@ -209,7 +210,7 @@ export function createWorkspace({ hikari, onChange = () => {}, onLibraryChange =
       Object.assign(obj, fitRasterBox(raster.width, raster.height, obj.width));
       const { dataUrl, ...metadata } = raster;
       rasterImports.push({ object_id: obj.id, ...metadata });
-      if (agentRequest || importedSources[obj.id] === 'codex') snapshots.push({ asset: rasterComponent(raster, obj.name.trim() || 'Generated component'),
+      if (agentRequest || importedSources[obj.id] === 'codex') snapshots.push({ asset: rasterComponent(raster, obj.name.trim() || 'Generated component', obj),
         origin: importedSources[obj.id] === 'codex' ? 'codex' : importedSources[obj.id] === 'storage' ? 'storage' : 'agent', object_id: obj.id });
     }
     next = normalizeDocument(next, validateSvg);
@@ -227,6 +228,7 @@ export function createWorkspace({ hikari, onChange = () => {}, onLibraryChange =
       raster_imports: rasterImports, auto_saved_assets: autoSavedAssets }].slice(-64);
     if (JSON.stringify(next).length > MAX_DOCUMENT_CHARS) throw new Error('The illustration is too large. Use smaller assets.');
     await save(next);
+    if (agentRequest && inspectionRunId) inspections.edited(inspectionRunId);
     undoStack.push(previous); if (undoStack.length > 25) undoStack.shift(); redoStack.length = 0; reportHistory();
     return { ok: true, status: 'applied', persisted: true, illustration_id: library.activeId, inserted_assets: insertedAssets,
       raster_imports: rasterImports, auto_saved_assets: autoSavedAssets, ...readDocument(documentState), ...readLibrary(library), ...readAssetLibrary(assetLibrary) };
@@ -326,7 +328,7 @@ export function createWorkspace({ hikari, onChange = () => {}, onLibraryChange =
         }
         return { ok: true, status: 'read', illustration_id: library.activeId, ...readDocument(documentState, args.include_assets), ...readLibrary(library), ...readAssetLibrary(assetLibrary),
           inspection: inspections.status(library.activeId, documentState.revision, inspectionRunId), asset_reuse: { required: true, checked: run.checked },
-          agent_contract: { request_schema: CANVAS_TOOL_CONTRACT.inputSchema, instructions: agentInstructions(documentState.complexity, documentState.imageGenerationPercent, documentState.imageGenerationStyle, documentState.imageStyleLine) } };
+          agent_contract: { request_schema: CANVAS_TOOL_CONTRACT.inputSchema, instructions: agentInstructions(documentState.complexity, documentState.imageGenerationPercent, documentState.imageGenerationStyle, documentState.imageStyleLine, documentState.palette) } };
       } catch (error) { onStatus(error.message); return failure('failed', error.message); }
     }).catch(error => failure('unavailable', error.message));
   }
@@ -389,7 +391,7 @@ export function createWorkspace({ hikari, onChange = () => {}, onLibraryChange =
         try {
           if (illustrationId !== library.activeId) return failure('illustration_changed', 'Another illustration is open. Paste into the active illustration.');
           const instance = instantiateClipboard(copied, canvas, offset, validateSvg);
-          // A single local action can contain all 200 objects plus their groups;
+          // A single local action can contain every object plus their groups;
           // scene validation still enforces the shared size and object limits.
           const result = await apply({ action: 'apply', expected_revision: documentState.revision,
             request_id: crypto.randomUUID(), operations: instance.operations });

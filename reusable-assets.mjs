@@ -1,6 +1,6 @@
 // Saved components are immutable snapshots. The index is the commit point;
 // placed copies never depend on the original illustration or asset file.
-import { normalizeObject, MAX_DOCUMENT_CHARS, CANVASES, validId, record, fields } from './model.mjs';
+import { normalizeObject, MAX_DOCUMENT_CHARS, MAX_OBJECTS, CANVASES, validId, record, fields } from './model.mjs';
 import { selectionBounds, transformSelection } from './grouping.mjs';
 
 export const ASSETS_PATH = 'reusable-assets.json';
@@ -13,7 +13,7 @@ export function normalizeAssetLibrary(raw) {
   if (raw?.version !== 1 || !validId(raw.revision) || !Array.isArray(raw.assets)) throw new Error('Invalid reusable asset library.');
   const assets = raw.assets.map(entry => {
     if (!validId(entry.id) || !validName(entry.name) || !Number.isFinite(entry.width) || entry.width <= 0 || !Number.isFinite(entry.height) || entry.height <= 0
-      || !Number.isInteger(entry.objectCount) || entry.objectCount < 1 || entry.objectCount > 200) throw new Error('Invalid reusable asset entry.');
+      || !Number.isInteger(entry.objectCount) || entry.objectCount < 1 || entry.objectCount > MAX_OBJECTS) throw new Error('Invalid reusable asset entry.');
     if (entry.fingerprint !== undefined && !/^[a-f0-9]{64}$/.test(entry.fingerprint)) throw new Error('Invalid asset fingerprint.');
     if (entry.origin !== undefined && !['manual', 'codex', 'storage', 'agent', 'agent-group'].includes(entry.origin)) throw new Error('Invalid asset origin.');
     return { id: entry.id, name: entry.name, width: entry.width, height: entry.height,
@@ -38,20 +38,23 @@ export function validateAssetRequest(args) {
     return;
   }
   fields(args, ['action', 'expected_assets_revision', 'request_id', ...(args.action === 'asset_save'
-    ? ['illustration_id', 'expected_revision', 'name', 'id', 'ids', 'raster_asset', 'textFree'] : ['asset_id'])]);
+    ? ['illustration_id', 'expected_revision', 'name', 'id', 'ids', 'raster_asset', 'textFree', 'objects'] : ['asset_id'])]);
   if (!validId(args.expected_assets_revision) || !validId(args.request_id)) throw new Error('Supply expected_assets_revision from asset_list/read and a unique request_id.');
   if (args.action === 'asset_delete') {
     if (!validId(args.asset_id)) throw new Error('Choose an asset_id from asset_list.');
     return;
   }
-  if (!validId(args.illustration_id) || !validId(args.expected_revision)) throw new Error('Asset save requires illustration_id and expected_revision from read.');
+  // Generated components never touch a figure, so only canvas saves need one.
+  if (args.objects === undefined && (!validId(args.illustration_id) || !validId(args.expected_revision))) throw new Error('Asset save requires illustration_id and expected_revision from read.');
   if (!validName(args.name)) throw new Error('Give the asset a name of 1–200 characters.');
-  if ([args.id, args.ids, args.raster_asset].filter(value => value !== undefined).length !== 1) throw new Error('Save takes a component/group id, component ids, or raster_asset.');
+  if ([args.id, args.ids, args.raster_asset, args.objects].filter(value => value !== undefined).length !== 1) throw new Error('Save takes a component/group id, component ids, raster_asset, or objects.');
+  if (args.objects !== undefined && (!Array.isArray(args.objects) || !args.objects.length || args.objects.length > 200
+    || args.objects.some(object => object?.type !== 'vector'))) throw new Error('objects takes 1–200 type:"vector" SVG components. Save image_gen output with raster_asset.');
   if (args.raster_asset !== undefined && (!validId(args.raster_asset) || args.textFree !== true)) throw new Error('Raster asset save requires raster_asset and textFree: true.');
   if (args.raster_asset === undefined && args.textFree !== undefined) throw new Error('textFree is only supported with raster_asset.');
   if (args.id !== undefined && !validId(args.id)) throw new Error('Invalid component/group id.');
-  if (args.ids !== undefined && (!Array.isArray(args.ids) || !args.ids.length || args.ids.length > 200
-    || args.ids.some(id => !validId(id)) || new Set(args.ids).size !== args.ids.length)) throw new Error('Select 1–200 distinct component ids.');
+  if (args.ids !== undefined && (!Array.isArray(args.ids) || !args.ids.length || args.ids.length > MAX_OBJECTS
+    || args.ids.some(id => !validId(id)) || new Set(args.ids).size !== args.ids.length)) throw new Error(`Select 1–${MAX_OBJECTS} distinct component ids.`);
 }
 
 // Content keys ignore component IDs and canvas translation. The saved snapshot
@@ -60,6 +63,7 @@ export function assetContent(asset) {
   if (asset.objects.length === 1 && asset.objects[0].type === 'raster') {
     const object = asset.objects[0];
     return { raster: object.dataUrl, rotation: object.rotation, opacity: object.opacity, visible: object.visible,
+      ...(object.chemicalStructure ? { chemicalStructure: true, textFree: object.textFree } : {}),
       aspectRatio: Math.round(object.width / object.height * 1e6) / 1e6 };
   }
   return asset.objects.map(({ id, name, canvas, ...object }) => {
@@ -78,12 +82,19 @@ export function snapshotAsset(document, args, validateSvg) {
   const ids = args.ids || group?.ids || [args.id];
   const objects = document.objects.filter(object => ids.includes(object.id));
   if (objects.length !== ids.length) throw new Error('Every selected component must exist.');
+  return originAsset(args.name.trim(), objects, validateSvg);
+}
+// An agent-built component: its objects share one coordinate space, in paint order.
+export function componentAsset(name, objects, validateSvg) {
+  return originAsset(name, objects.map(object => normalizeObject(object, validateSvg)), validateSvg);
+}
+function originAsset(name, objects, validateSvg) {
   const bounds = selectionBounds(objects);
-  return normalizeAsset({ version: 1, name: args.name.trim(), objects: objects.map(object => ({ ...object,
+  return normalizeAsset({ version: 1, name, objects: objects.map(object => ({ ...object,
     canvas: 'main', x: object.x - bounds.x, y: object.y - bounds.y })) }, validateSvg);
 }
 export function normalizeAsset(raw, validateSvg) {
-  if (raw?.version !== 1 || !validName(raw.name) || !Array.isArray(raw.objects) || !raw.objects.length || raw.objects.length > 200) throw new Error('Invalid reusable component.');
+  if (raw?.version !== 1 || !validName(raw.name) || !Array.isArray(raw.objects) || !raw.objects.length || raw.objects.length > MAX_OBJECTS) throw new Error('Invalid reusable component.');
   const objects = raw.objects.map(object => normalizeObject(object, validateSvg));
   if (new Set(objects.map(object => object.id)).size !== objects.length || objects.some(object => object.canvas !== 'main')) throw new Error('Invalid reusable component objects.');
   const bounds = selectionBounds(objects);
