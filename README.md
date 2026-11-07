@@ -66,10 +66,12 @@ conversation and its unsent draft.
   **Save as an asset…** and, on the canvas, **Generate here with Codex…**, which
   adds one new component centered where you clicked.
 - **Assets**, beside **Illustrations** in the left rail's switch, keeps reusable
-  components shared by all figures. Save a selection,
+  components shared by all figures in a thumbnail grid. Hover or focus a thumbnail
+  to see its larger preview and description under the grid; click it to insert a copy. Save a selection,
   use **Import asset…** or **Import folder…** for SVG, PNG, JPEG or WebP files, or use
   **Generate asset…** to have Codex make one (SVG or image generation, per the
-  figure's Image generation settings) without touching the canvas.
+  figure's Image generation settings, in the figure's image style or one chosen
+  for that asset) without touching the canvas.
 - **Drag images in:** drop SVG, PNG, JPEG or WebP files on the canvas to add them
   as layers.
 - **Colors** in Layers recolor an SVG layer one color at a time; the active swatch
@@ -107,7 +109,10 @@ On Windows use Ctrl in place of ⌘.
 - **Plots** are rendered by Hikari's bundled Plotly.js through `plotly.render`.
   Each plot keeps its data, layout and processing notes so Codex can revise it.
 - **Assets first:** before each drawing or edit, Codex checks the asset library
-  and reuses suitable components. Generated images and finished multi-layer groups
+  descriptions, reads editable sources, previews candidates as native images,
+  and reuses suitable components. Add descriptions when saving, or edit them with
+  each asset's info button; search matches names and descriptions.
+  Generated images and finished multi-layer groups
   are saved there automatically.
 - **Visual review:** a run that edited the canvas completes only after Codex
   renders the latest canvas and records what it checked with `inspect`. Hikari
