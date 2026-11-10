@@ -1,7 +1,7 @@
 import { createPresentation, i18n } from "./i18n.mjs";
 const i18nUi = createPresentation("figura");
 import { createWorkspace, encodeText } from './workspace.mjs';
-import { scene, renderPreview, objectGroup, element, stretchSvg, interactionBox, clearTextBounds, validateSvg } from './artwork.mjs';
+import { scene, renderPreview, svgSource, objectGroup, element, stretchSvg, interactionBox, clearTextBounds, validateSvg } from './artwork.mjs';
 import { initPluginLeftRailResizer } from './left-rail.mjs';
 import { icon, mountIcons } from './icons.mjs';
 import { COMPLEXITY_PROFILES } from './complexity.mjs';
@@ -9,6 +9,7 @@ import { imageGenerationSummary } from './image-generation.mjs';
 import { IMAGE_STYLE_PRESETS } from './image-style.mjs';
 import { resizeObject, resizeAnchor } from './geometry.mjs';
 import { createCanvasViewport } from './viewport.mjs';
+import { createCanvasRulers } from './canvas-rulers.mjs';
 import { selectionBounds, resizeSelection, transformSelection } from './grouping.mjs';
 import { alignmentOperations, selectionLayoutUnits } from './alignment.mjs';
 import { smartGuideTargets, snapTranslation } from './smart-guides.mjs';
@@ -20,10 +21,12 @@ import { rectanglePoints, regionSelection } from './area-selection.mjs';
 import { createWorkspaceTools } from './workspace-tools.mjs';
 import { installSourceActions } from './source-context.mjs';
 import { exportPowerPoint } from './powerpoint.mjs';
+import { DEFAULT_PNG_PPI, MAX_PNG_PPI, setPngPpi } from './png-export.mjs';
 import { angleDelta, rotateComponents } from './rotation.mjs';
 import { installCanvasClipboard } from './clipboard.mjs';
 import { readChemicalClipboard, prepareChemicalImage, prepareChemicalVector, chemicalStructureSnapshot } from './chemical-clipboard.mjs';
 import { installCanvasContextMenu } from './context-menu.mjs';
+import { installIllustrationMenu } from './illustration-menu.mjs';
 import { createArtworkHitTester } from './hit-testing.mjs';
 import { createCanvasTextEditor } from './text-editor.mjs';
 import { createSelectionToolbar } from './selection-toolbar.mjs';
@@ -199,7 +202,10 @@ function renderZoom() {
   $('zoom-fit').setAttribute('aria-pressed', String(view.zoom === null));
   workspaceTools?.sync();
 }
-const viewport = createCanvasViewport(stage => { syncSelectionSize(stage); renderZoom(); textEditor?.layout(); syncSelectionToolbar(); });
+const canvasRulers = createCanvasRulers($('main-canvas'));
+const viewport = createCanvasViewport(stage => {
+  syncSelectionSize(stage); renderZoom(); textEditor?.layout(); syncSelectionToolbar(); canvasRulers.update();
+});
 function renderCanvas(canvas, documentState = state) {
   const stage = $(`${canvas}-canvas`), focusedId = document.activeElement?.dataset.objectId,
     focusedRotation = document.activeElement?.dataset.rotateId;
@@ -357,6 +363,7 @@ function renderIllustrations(library = workspace.getLibrary()) {
     const button = document.createElement('button'); button.type = 'button';
     button.className = `illustration-row${entry.id === library.active_illustration_id ? ' is-active' : ''}`;
     button.dataset.illustrationId = entry.id; button.setAttribute('aria-pressed', String(entry.id === library.active_illustration_id));
+    button.setAttribute('aria-haspopup', 'menu');
     i18nUi.setAttribute(button, "title", (entry.title || i18nUi.message("Untitled figure")));
     const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); icon.setAttribute('viewBox', '0 0 24 24'); icon.setAttribute('aria-hidden', 'true');
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path'); path.setAttribute('d', 'M5 3h14v18H5zM8 16l3-4 3 3 2-2'); icon.append(path);
@@ -371,16 +378,19 @@ function renderIllustrations(library = workspace.getLibrary()) {
   list.scrollTop = scrollTop;
   if (focusedId) [...list.children].find(button => button.dataset.illustrationId === focusedId)?.focus({ preventScroll: true });
 }
-async function manageIllustration(action, id) {
+async function manageIllustration(action, id, title) {
   try {
     await flushImagePreferences();
-    const result = await workspace.manage(action, id);
+    const result = await workspace.manage(action, id, title);
     if (!result.ok) status(result.error);
-    else if (action !== 'open') { $('illustration-search').value = ''; renderIllustrations(); }
-  } catch (error) { status(error.message); }
+    else if (action === 'create' || action === 'duplicate') { $('illustration-search').value = ''; renderIllustrations(); }
+    return result;
+  } catch (error) { status(error.message); return { ok: false, error: error.message }; }
 }
+const illustrationMenu = installIllustrationMenu({ document, workspace, manageIllustration, exportFigure, i18nUi, status });
 // The left rail switches between the figure library and the shared assets.
 function showLibrary(view) {
+  illustrationMenu.close();
   for (const node of document.querySelectorAll('[data-library-view]')) node.hidden = node.dataset.libraryView !== view;
   $('illustrations-view-tab').setAttribute('aria-pressed', String(view !== 'assets')); $('assets-view-tab').setAttribute('aria-pressed', String(view === 'assets'));
   if (view === 'assets') assetsPanel?.render();
@@ -1015,6 +1025,7 @@ document.addEventListener('keydown', event => {
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a' && event.target.closest('.canvas-stage, #layers')) {
     event.preventDefault(); select(state.objects.filter(object => object.canvas === activeCanvas && object.visible).map(object => object.id), { reveal: false }); return;
   }
+  if (event.target.closest('.illustration-row')) return;
   const object = selectionTarget(); if (!object) return;
   if (event.key === 'Enter' && object.type === 'text' && (event.target.dataset.objectId || event.target.closest('.layer-select'))) {
     event.preventDefault(); editLabel(object.id); return;
@@ -1027,24 +1038,48 @@ document.addEventListener('keydown', event => {
   }
 });
 let exporting = false;
-async function exportFigure(format) {
+let pngPpi = DEFAULT_PNG_PPI;
+const pngExportDialog = $('png-export-dialog'), pngExportPpi = $('png-export-ppi');
+pngExportPpi.max = MAX_PNG_PPI;
+$('cancel-png-export').addEventListener('click', () => pngExportDialog.close());
+function choosePngPpi() {
+  pngExportPpi.value = pngPpi;
+  pngExportDialog.returnValue = '';
+  pngExportDialog.showModal();
+  pngExportPpi.focus();
+  pngExportPpi.select();
+  return new Promise(resolve => pngExportDialog.addEventListener('close', () => {
+    if (pngExportDialog.returnValue !== 'export') { resolve(null); return; }
+    pngPpi = pngExportPpi.valueAsNumber;
+    resolve(pngPpi);
+  }, { once: true }));
+}
+async function exportFigure(format, id = illustrationId) {
   if (exporting) return;
   exporting = true;
   const buttons = ['export-svg', 'export-png', 'export-pptx'].map($);
-  buttons.forEach(button => { button.disabled = true; });
   try {
-    await workspace.ready;
-    const documentState = workspace.getDocument();
+    await flushImagePreferences();
+    const documentState = await workspace.getExportDocument(id);
+    const ppi = format === 'png' ? await choosePngPpi() : null;
+    if (format === 'png' && ppi === null) { status(i18nUi.text("Export canceled")); return; }
+    buttons.forEach(button => { button.disabled = true; });
     if (format === 'pptx') status(i18nUi.text("Preparing PowerPoint…"));
     const dataBase64 = format === 'pptx' ? await exportPowerPoint(documentState)
-      : format === 'svg' ? encodeText(await workspace.exportSvg('main'))
-      : (await renderPreview(documentState, 'main', 8000)).data_url.split(',')[1];
+      : format === 'svg' ? encodeText(await svgSource(documentState, 'main'))
+      : setPngPpi((await renderPreview(documentState, 'main', 8000)).data_url.split(',')[1], ppi);
     const result = await hikari.call('downloads.save', { fileName: `${documentState.title || 'figure'}.${format}`, dataBase64 });
     status((result.saved ? i18nUi.text("Exported {p0}", { p0: format.toUpperCase() }) : i18nUi.text("Export canceled")));
   } catch (error) { status(error.message); }
   finally { exporting = false; buttons.forEach(button => { button.disabled = false; }); }
 }
-$('export-svg').addEventListener('click', () => void exportFigure('svg')); $('export-png').addEventListener('click', () => void exportFigure('png'));
+$('export-svg').addEventListener('click', () => void exportFigure('svg'));
+$('export-png').addEventListener('click', () => {
+  const menu = $('export-menu');
+  menu.open = false;
+  menu.querySelector('summary').focus();
+  void exportFigure('png');
+});
 $('export-pptx').addEventListener('click', () => void exportFigure('pptx'));
 $('complexity').addEventListener('change', event => void edit([{ op: 'complexity', complexity: event.target.value }]));
 for (const id of ['image-generation-style', 'generate-asset-style', 'generate-here-style']) for (const [value, { label }] of Object.entries(IMAGE_STYLE_PRESETS)) { const option = new Option(label, value); i18nUi.setOwnedText(option, label); $(id).add(option); };
@@ -1177,6 +1212,7 @@ function theme(info) {
   $('generate-asset').hidden = !canDraw;
   syncComposer();
   document.body.classList.toggle('theme-night', info?.appearance?.mode === 'night');
+  document.body.classList.toggle('theme-miku', info?.appearance?.mode === 'miku');
   document.documentElement.style.setProperty('--app-font-size', `${info?.appearance?.fontSize || 16}px`);
   leftRail.applyContext(info?.layout?.leftRail || {});
   if (Array.isArray(info?.permissions) && !info.permissions.includes('layout')) leftRail.destroy();
